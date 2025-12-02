@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         위플랩 룰렛 내역 추출기 v1.3
+// @name         위플랩 룰렛 내역 추출기
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  위플랩(Weflab)에서 룰렛 내역을 추출합니다.
 // @author       SSoGari Studio
 // @match        https://weflab.com/*
