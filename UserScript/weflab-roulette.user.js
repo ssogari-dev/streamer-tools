@@ -7,6 +7,8 @@
 // @match        https://weflab.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=weflab.com
 // @grant        none
+// @updateURL    https://raw.githubusercontent.com/ssogari-dev/streamer-tools/main/UserScript/weflab-roulette.user.js
+// @downloadURL  https://raw.githubusercontent.com/ssogari-dev/streamer-tools/main/UserScript/weflab-roulette.user.js
 // ==/UserScript==
 
 (function() {
