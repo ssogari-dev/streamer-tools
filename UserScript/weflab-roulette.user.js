@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         위플랩 룰렛 내역 추출기
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  위플랩(Weflab)에서 룰렛 내역을 추출합니다.
 // @author       SSoGari Studio
 // @match        https://weflab.com/*
@@ -172,37 +172,45 @@
                     if (!item.roulette || item.roulette.trim() === "") return;
                     rouletteCount++;
 
-                    // 기본 정보
-                    const baseInfo = {
-                        time: formatDate(item.create_time),
-                        name: item.name,
-                        id: item.id,
-                        value: item.value // 총 별풍선
-                    };
-
+                    // 1. list 파싱 (묶음 여부 확인)
                     let listArray = [];
-                    // list 파싱 시도
                     if (item.list && item.list.trim() !== "") {
                         try {
                             listArray = JSON.parse(item.list);
                         } catch (e) { console.warn("JSON Parse Error", e); }
                     }
 
+                    // 2. 값 계산
+                    const totalValue = parseInt(item.value || "0", 10);
+                    const count = listArray.length > 0 ? listArray.length : 1;
+                    const unitValue = Math.floor(totalValue / count); // 1회당 가격
+
+                    // 기본 정보
+                    const baseInfo = {
+                        time: formatDate(item.create_time),
+                        name: item.name,
+                        id: item.id,
+                        total_value: totalValue, // 원본 총액 (300)
+                        unit_value: unitValue,   // 1회당 (30)
+                    };
+
                     if (listArray.length > 0) {
-                        // [Case A] 연속 뽑기: list의 항목들을 '당첨결과'로 사용
-                        listArray.forEach(opt => {
+                        // [Case A] 연속 뽑기: index를 사용하여 묶음 정보 생성
+                        listArray.forEach((opt, index) => {
                             currentPageRows.push({
                                 ...baseInfo,
-                                win_result: opt[0] || "", // 실제 당첨된 옵션명
-                                win_percent: opt[1] || "" // 해당 옵션의 확률
+                                win_result: opt[0] || "",
+                                win_percent: opt[1] || "",
+                                batch_info: `${index + 1}/${count}` // 예: 1/10, 2/10...
                             });
                         });
                     } else {
-                        // [Case B] 단일 뽑기: roulette 필드를 '당첨결과'로 사용
+                        // [Case B] 단일 뽑기
                         currentPageRows.push({
                             ...baseInfo,
                             win_result: item.roulette,
-                            win_percent: item.percent
+                            win_percent: item.percent,
+                            batch_info: "1/1"
                         });
                     }
                 });
@@ -238,12 +246,12 @@
     }
 
     function downloadCSV(data, filename) {
-        // 헤더 깔끔하게
-        let csvContent = "\uFEFF시간,닉네임,아이디,총별풍선,당첨결과,확률\n";
+        // 헤더 수정 (총별풍선, 1회당별풍선, 묶음정보 추가)
+        let csvContent = "\uFEFF시간,닉네임,아이디,총별풍선(묶음),1회당별풍선,묶음정보,당첨결과,확률\n";
 
         data.forEach(row => {
             const clean = t => `"${String(t || "").replace(/"/g, '""')}"`;
-            csvContent += `${clean(row.time)},${clean(row.name)},${clean(row.id)},${clean(row.value)},${clean(row.win_result)},${clean(row.win_percent)}\n`;
+            csvContent += `${clean(row.time)},${clean(row.name)},${clean(row.id)},${clean(row.total_value)},${clean(row.unit_value)},${clean(row.batch_info)},${clean(row.win_result)},${clean(row.win_percent)}\n`;
         });
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
