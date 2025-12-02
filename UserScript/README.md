@@ -5,10 +5,10 @@ Tampermonkey, Violentmonkey 등의 확장 프로그램을 통해 브라우저에
 
 ## 📦 스크립트 목록
 
-| 스크립트 이름 | 설명 | 버전 | 설치 / 업데이트 |
+| 스크립트 이름 | 설명 | 버전 | 설치 |
 | :--- | :--- | :---: | :---: |
-| **SOOP 별풍선 추출기** | SOOP VOD 채팅창에서 **별풍선 후원 내역**을 추출하여 CSV로 저장합니다. | v1.5 | [📥 설치하기](https://raw.githubusercontent.com/ssogari-dev/streamer-tools/main/UserScript/soop-vod-extractor.user.js) |
-| **위플랩 룰렛 추출기** | 위플랩(Weflab)의 **룰렛 당첨 내역**을 전체 스캔하여 CSV로 통합 저장합니다. | v1.3 | [📥 설치하기](https://raw.githubusercontent.com/ssogari-dev/streamer-tools/main/UserScript/weflab-roulette.user.js) |
+| **SOOP 별풍선 추출기** | SOOP VOD 채팅창에서 **별풍선 후원 내역**을 추출하여 CSV로 저장합니다. | v1.6 | [📥 설치하기](https://raw.githubusercontent.com/ssogari-dev/streamer-tools/main/UserScript/soop-vod-extractor.user.js) |
+| **위플랩 룰렛 추출기** | 위플랩(Weflab)의 **룰렛 당첨 내역**을 전체 스캔하여 CSV로 통합 저장합니다. | v1.4 | [📥 설치하기](https://raw.githubusercontent.com/ssogari-dev/streamer-tools/main/UserScript/weflab-roulette.user.js) |
 
 ---
 
