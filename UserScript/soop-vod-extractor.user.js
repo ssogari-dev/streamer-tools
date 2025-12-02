@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         SOOP VOD 별풍선 내역 추출기 v1.5
+// @name         SOOP VOD 별풍선 내역 추출기
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  SOOP VOD 별풍선 내역 추출
 // @author       SSoGari Studio
 // @match        https://vod.sooplive.co.kr/*
