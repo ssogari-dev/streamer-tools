@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SOOP VOD 별풍선 내역 추출기
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.8
 // @description  SOOP VOD 별풍선 내역 추출
 // @author       SSoGari Studio
 // @match        https://vod.sooplive.co.kr/*
@@ -64,28 +64,53 @@
                         const json = JSON.parse(response.responseText);
                         if (json.result === 1 && json.data) {
 
-                            let baseKey = json.data.file_info_key;
+                            const segments = [];
+                            const broadStart = json.data.broad_start;
+                            const broadTitle = json.data.broad_title || "";
 
-                            if (!baseKey && json.data.thumb) {
-                                console.log("[Info] file_info_key 없음 -> 썸네일 URL 파싱 시도");
-                                const match = json.data.thumb.match(/rowKey=([^&]+)/);
-                                if (match) {
-                                    baseKey = match[1].replace(/_[a-z]+$/, '');
+                            // 1. 분할된 영상(files)이 있는 경우
+                            if (json.data.files && Array.isArray(json.data.files) && json.data.files.length > 0) {
+                                console.log(`[Info] 분할된 영상 발견: ${json.data.files.length}개`);
+                                // file_order 순으로 정렬
+                                json.data.files.sort((a, b) => a.file_order - b.file_order);
+                                
+                                json.data.files.forEach(f => {
+                                    if (f.file_info_key) {
+                                        const duration = f.duration ? Math.floor(f.duration / 1000) : 0;
+                                        segments.push({
+                                            rowKey: f.file_info_key + "_c",
+                                            duration: duration
+                                        });
+                                    }
+                                });
+                            } 
+                            
+                            // 2. 단일 영상인 경우 (또는 files 처리에 실패한 경우)
+                            if (segments.length === 0) {
+                                let baseKey = json.data.file_info_key;
+                                
+                                if (!baseKey && json.data.thumb) {
+                                    console.log("[Info] file_info_key 없음 -> 썸네일 URL 파싱 시도");
+                                    const match = json.data.thumb.match(/rowKey=([^&]+)/);
+                                    if (match) {
+                                        baseKey = match[1].replace(/_[a-z]+$/, '');
+                                    }
+                                }
+
+                                if (baseKey) {
+                                    const durationMs = json.data.total_file_duration;
+                                    const durationSec = durationMs ? Math.floor(durationMs / 1000) : 0;
+                                    segments.push({
+                                        rowKey: baseKey + "_c",
+                                        duration: durationSec
+                                    });
                                 }
                             }
 
-                            const rowKey = baseKey ? baseKey + "_c" : null;
-                            const durationMs = json.data.total_file_duration;
-                            const durationSec = durationMs ? Math.floor(durationMs / 1000) : 0;
-                            const broadStart = json.data.broad_start;
+                            console.log(`[Info] 수집 대상 세그먼트: ${segments.length}개`, segments);
 
-                            // 방송 제목이 없어도 진행되도록 수정
-                            const broadTitle = json.data.broad_title || "";
-
-                            console.log(`[Info] 결과: Key=${rowKey}, Duration=${durationSec}, Start=${broadStart}`);
-
-                            if (rowKey && durationSec > 0) {
-                                resolve({ rowKey, durationSec, broadStart, broadTitle });
+                            if (segments.length > 0) {
+                                resolve({ segments, broadStart, broadTitle });
                             } else {
                                 reject(`키를 찾을 수 없습니다. (thumb: ${json.data.thumb})`);
                             }
@@ -168,52 +193,85 @@
 
         try {
             const meta = await getMetadata(titleNo);
-            const { rowKey, durationSec, broadStart, broadTitle } = meta;
+            const { segments, broadStart, broadTitle } = meta;
+
+            // 전체 길이 계산 (모든 세그먼트 합산)
+            const totalDuration = segments.reduce((acc, cur) => acc + cur.duration, 0);
 
             let defaultName = broadStart.split(' ')[0].replace(/-/g, '');
             if (broadTitle) {
-                // 파일명으로 못 쓰는 특수문자 제거
                 const safeTitle = broadTitle.replace(/[\\/:*?"<>|]/g, "_").trim();
                 defaultName += `-${safeTitle}`;
             }
 
             const userInput = prompt(
-                `영상 길이: ${formatDuration(durationSec)}\n방송 시작: ${broadStart}\n\n저장할 파일명을 입력해주세요 (확장자 .csv 제외):`,
+                `영상 길이: ${formatDuration(totalDuration)} (분할: ${segments.length}개)\n방송 시작: ${broadStart}\n\n저장할 파일명을 입력해주세요 (확장자 .csv 제외):`,
                 defaultName
             );
 
-            // 취소 버튼 누르면 중단
             if (userInput === null) {
                 btn.disabled = false;
                 btn.innerText = originalText;
                 return;
             }
 
-            // 입력받은 파일명 정리
             const finalFileName = userInput.trim() + ".csv";
-
             let allData = [];
-            for (let t = 0; t <= durationSec; t += (CHUNK_DURATION * BATCH_SIZE)) {
-                const promises = [];
-                for (let i = 0; i < BATCH_SIZE; i++) {
-                    const currentTime = t + (i * CHUNK_DURATION);
-                    if (currentTime > durationSec) break;
-                    promises.push(fetchChatSegment(rowKey, currentTime));
-                }
+            
+            // 전체 진행률 계산을 위한 변수
+            let currentTotalProgress = 0;
+            
+            // accumulatedTime: 이전 파트까지의 총 시간 (실제 시간 계산용)
+            let accumulatedTime = 0;
 
-                btn.innerText = `⏳ 수집 중... ${Math.round((t / durationSec) * 100)}%`;
-                const results = await Promise.all(promises);
-                results.flat().forEach(item => allData.push(item));
-                await new Promise(r => setTimeout(r, 50));
+            for (let sIdx = 0; sIdx < segments.length; sIdx++) {
+                const segment = segments[sIdx];
+                const { rowKey, duration } = segment;
+                
+                console.log(`[Info] 파트 ${sIdx + 1}/${segments.length} 수집 시작 (Key: ${rowKey}, 길이: ${duration}초)`);
+
+                for (let t = 0; t <= duration; t += (CHUNK_DURATION * BATCH_SIZE)) {
+                    const promises = [];
+                    for (let i = 0; i < BATCH_SIZE; i++) {
+                        const currentTime = t + (i * CHUNK_DURATION);
+                        if (currentTime > duration) break;
+                        promises.push(fetchChatSegment(rowKey, currentTime));
+                    }
+
+                    // 진행률 표시 (전체 기준)
+                    const progressPercent = Math.round(((currentTotalProgress + t) / totalDuration) * 100);
+                    btn.innerText = `⏳ 수집 중... ${progressPercent}% (파트 ${sIdx + 1}/${segments.length})`;
+
+                    const results = await Promise.all(promises);
+                    
+                    // 수집된 데이터에 offset 시간(이전 파트들의 길이 합)을 더해줌
+                    // 이렇게 해야 나중에 전체 타임라인에서 시간이 이어짐
+                    results.flat().forEach(item => {
+                        // item.seconds는 해당 파트 내에서의 시간 (0부터 시작)
+                        // realSeconds: 방송 시작부터의 누적 시간
+                        const realSeconds = accumulatedTime + item.seconds;
+                        allData.push({
+                            ...item,
+                            realSeconds: realSeconds // 정렬 및 실제 시간 계산용
+                        });
+                    });
+                    
+                    await new Promise(r => setTimeout(r, 50));
+                }
+                
+                currentTotalProgress += duration;
+                accumulatedTime += duration;
             }
 
             const processedData = allData
-                .filter((v, i, a) => a.findIndex(t => (t.seconds === v.seconds && t.userId === v.userId && t.count === v.count)) === i)
-                .sort((a, b) => a.seconds - b.seconds)
+                .filter((v, i, a) => a.findIndex(t => (t.realSeconds === v.realSeconds && t.userId === v.userId && t.count === v.count)) === i)
+                .sort((a, b) => a.realSeconds - b.realSeconds)
                 .map(item => ({
-                    ...item,
-                    playTime: formatDuration(item.seconds),
-                    realTime: calculateRealTime(broadStart, item.seconds)
+                    nickname: item.nickname,
+                    userId: item.userId,
+                    count: item.count,
+                    playTime: formatDuration(item.realSeconds),
+                    realTime: calculateRealTime(broadStart, item.realSeconds)
                 }));
 
             if (processedData.length === 0) {
